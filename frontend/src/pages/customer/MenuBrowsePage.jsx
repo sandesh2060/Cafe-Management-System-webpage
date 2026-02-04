@@ -1,18 +1,29 @@
 // frontend/src/pages/customer/MenuBrowsePage.jsx
-import React, { useRef } from 'react'
+
+
+import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import gsap from 'gsap'
 import { useGSAP } from '@gsap/react'
-import { 
-  ArrowLeft, 
-  ShoppingCart, 
-  Search, 
+import {
+  ArrowLeft,
+  ShoppingCart,
+  Search,
   Star,
   Flame,
   Leaf,
-  Clock
+  Clock,
+  ArrowDown,
+  ArrowUp
 } from 'lucide-react'
 import { useSession } from '../../hooks/common/useSession'
+
+// hook import 
+import useCart from '../../hooks/customer/useCart'
+import AppetizersModal from './modals/Appetizer'
+import MainCourseModal from './modals/MainCourse'
+import DessertsModal from './modals/Desserts'
+import BeveragesModal from './modals/Beverages'
 
 const MenuBrowsePage = () => {
   const { tableNumber, activeSession } = useSession()
@@ -82,12 +93,55 @@ const MenuBrowsePage = () => {
       isSpicy: true,
       prepTime: '18 min'
     },
+    {
+      id: 3,
+      name: 'Spicy asdf Curry',
+      price: 18.99,
+      image: '🍛',
+      rating: 4.7,
+      isVeg: true,
+      isSpicy: true,
+      prepTime: '18 min'
+    },
   ]
+
+
+  // cart hook data 
+  const { cart, addtocart } = useCart()
+
+  const [isAppetizerOpen, setisAppetizerOpen] = useState(false)
+  const [isMainCourseOpen, setisMainCourseOpen] = useState(false)
+  const [isDessertsOpen, setisDessertsOpen] = useState(false)
+  const [isBeveragesOpen, setisBeveragesOpen] = useState(false)
+
+  const handleCategorySelection = (categoryName) => {
+    if (categoryName === "Appetizers") {
+      setisAppetizerOpen(true)
+    }
+
+    if (categoryName === "Main Course") {
+      setisMainCourseOpen(true)
+    }
+    if (categoryName === "Desserts") {
+      setisDessertsOpen(true)
+    }
+    if (categoryName === "Beverages") {
+      setisBeveragesOpen(true)
+    }
+
+  }
+
+  // kati ota item dekhaune featured ma 
+  const toShow = 3;
+  const [showall, setshowall] = useState(false)
+
+  const itemsFeatured = showall ? featuredItems : featuredItems.slice(0, toShow)
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
       {/* Header */}
-      <header 
+      <header
         ref={headerRef}
         className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg border-b border-gray-200"
       >
@@ -108,7 +162,7 @@ const MenuBrowsePage = () => {
             <button className="relative p-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition">
               <ShoppingCart size={20} />
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                0
+                {cart.length}
               </span>
             </button>
           </div>
@@ -134,10 +188,11 @@ const MenuBrowsePage = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {menuCategories.map((category) => (
                 <button
+                  onClick={() => handleCategorySelection(category.name)}
                   key={category.id}
                   className="p-6 bg-white rounded-2xl shadow-sm hover:shadow-md transition group"
                 >
-                  <div className={`w-16 h-16 ${category.color} rounded-2xl flex items-center justify-center text-3xl mb-3 mx-auto group-hover:scale-110 transition`}>
+                  <div className={`w-16 h-16 ${category.color} rounded-2xl  flex items-center justify-center text-3xl mb-3 mx-auto group-hover:scale-110 transition`}>
                     {category.icon}
                   </div>
                   <h3 className="font-semibold text-gray-900">{category.name}</h3>
@@ -151,12 +206,22 @@ const MenuBrowsePage = () => {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold text-gray-900">Featured Items</h2>
-              <button className="text-orange-500 font-medium hover:text-orange-600">
-                View All
+              <button
+                onClick={() => setshowall(!showall)}
+                className="text-orange-500 font-medium hover:text-orange-600 flex items-center gap-1">
+                {showall ? (
+                  <>
+                    Show Less <ArrowUp size={18} />
+                  </>
+                ) : (
+                  <>
+                    View All <ArrowDown size={18} />
+                  </>
+                )}
               </button>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {featuredItems.map((item) => (
+              {itemsFeatured.map((item) => (
                 <div
                   key={item.id}
                   className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition overflow-hidden group cursor-pointer"
@@ -198,7 +263,7 @@ const MenuBrowsePage = () => {
                           {item.prepTime}
                         </p>
                       </div>
-                      <button className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
+                      <button onClick={() => addtocart(item)} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
                         Add
                       </button>
                     </div>
@@ -209,6 +274,11 @@ const MenuBrowsePage = () => {
           </section>
         </div>
       </main>
+
+      <AppetizersModal isOpen={isAppetizerOpen} addtocart={addtocart} onClose={() => setisAppetizerOpen(false)} />
+      <MainCourseModal isOpen={isMainCourseOpen} addtocart={addtocart} onClose={() => setisMainCourseOpen(false)} />
+      <DessertsModal isOpen={isDessertsOpen} addtocart={addtocart} onClose={() => setisDessertsOpen(false)} />
+      <BeveragesModal isOpen={isBeveragesOpen} addtocart={addtocart} onClose={() => setisBeveragesOpen(false)} />
     </div>
   )
 }
