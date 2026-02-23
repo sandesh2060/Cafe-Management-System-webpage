@@ -1,268 +1,252 @@
-// backend/src/app.js
-const express = require('express')
-const cors = require('cors')
-const helmet = require('helmet')
-const mongoSanitize = require('express-mongo-sanitize')
-const compression = require('compression')
-const morgan = require('morgan')
-const path = require('path')
-const cookieParser = require('cookie-parser')
-const rateLimit = require('express-rate-limit')
+// File: backend/src/app.js
+// 🎯 EXPRESS APP - Configured for your exact project structure
+// ✅ All routes loaded safely with error handling + All Modules
+// 🔧 UPDATED: Fixed biometric routes path
 
-// Import middleware
-const { errorHandler } = require('./middleware/errorHandler')
-const { logger } = require('./middleware/logger')
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
 
-// Import routes
-const authRoutes = require('./routes/authRoutes')
+const app = express();
 
-// Customer routes
-const customerMenuRoutes = require('./routes/customer/menuRoutes')
-const customerOrderRoutes = require('./routes/customer/orderRoutes')
-const customerCartRoutes = require('./routes/customer/cartRoutes')
-const customerOfferRoutes = require('./routes/customer/offerRoutes')
-const customerLoyaltyRoutes = require('./routes/customer/loyaltyRoutes')
-const customerReviewRoutes = require('./routes/customer/reviewRoutes')
-const customerSessionRoutes = require('./routes/customer/sessionRoutes')
+// ============================================
+// MIDDLEWARE
+// ============================================
 
-// SuperAdmin routes
-const superadminUserRoutes = require('./routes/superadmin/userRoutes')
-const superadminMenuRoutes = require('./routes/superadmin/menuManagementRoutes')
-const superadminOfferRoutes = require('./routes/superadmin/offerManagementRoutes')
-const superadminLoyaltyRoutes = require('./routes/superadmin/loyaltyManagementRoutes')
-const superadminReportRoutes = require('./routes/superadmin/reportRoutes')
-const superadminSettingsRoutes = require('./routes/superadmin/settingsRoutes')
+// CORS
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
 
-// Cashier routes
-const cashierBillingRoutes = require('./routes/cashier/billingRoutes')
-const cashierCashFlowRoutes = require('./routes/cashier/cashFlowRoutes')
-const cashierTransactionRoutes = require('./routes/cashier/transactionRoutes')
-const cashierReportRoutes = require('./routes/cashier/reportRoutes')
-const cashierPaymentRoutes = require('./routes/cashier/paymentRoutes')
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Chef routes
-const chefKitchenRoutes = require('./routes/chef/kitchenRoutes')
-const chefOrderQueueRoutes = require('./routes/chef/orderQueueRoutes')
-const chefInventoryRoutes = require('./routes/chef/inventoryRoutes')
-const chefRecipeRoutes = require('./routes/chef/recipeRoutes')
-
-// Waiter routes
-const waiterTableRoutes = require('./routes/waiter/tableRoutes')
-const waiterOrderRoutes = require('./routes/waiter/orderRoutes')
-const waiterTipRoutes = require('./routes/waiter/tipRoutes')
-
-/**
- * Initialize Express App
- */
-const app = express()
-
-/**
- * Trust Proxy (for rate limiting behind reverse proxy)
- */
-app.set('trust proxy', 1)
-
-/**
- * Security Middleware
- */
-// Helmet - Set security HTTP headers
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
-    },
-  },
-  crossOriginEmbedderPolicy: false,
-}))
-
-// CORS Configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      process.env.CLIENT_URL || 'http://localhost:5173',
-      'http://localhost:3000',
-      'http://localhost:5173',
-    ]
-    
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400, // 24 hours
+// Logging
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
 }
 
-app.use(cors(corsOptions))
+// ============================================
+// HEALTH CHECK
+// ============================================
 
-/**
- * Rate Limiting
- */
-// General API rate limiter
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-})
-
-// Auth route rate limiter (stricter)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
-  message: 'Too many login attempts, please try again later.',
-  skipSuccessfulRequests: true,
-})
-
-/**
- * Body Parser Middleware
- */
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-app.use(cookieParser())
-
-/**
- * Data Sanitization
- */
-// Against NoSQL query injection
-app.use(mongoSanitize())
-
-/**
- * Compression Middleware
- */
-app.use(compression())
-
-/**
- * Logging Middleware
- */
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'))
-} else {
-  app.use(morgan('combined', { stream: logger.stream }))
-}
-
-// Custom request logger
-app.use((req, res, next) => {
-  req.requestTime = new Date().toISOString()
-  logger.info(`${req.method} ${req.originalUrl} - IP: ${req.ip}`)
-  next()
-})
-
-/**
- * Static Files
- */
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
-
-/**
- * Health Check Route
- */
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Server is running',
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Cafe Management API is running',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-  })
-})
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
-/**
- * API Version Info
- */
-app.get('/api', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Cafe Management System API',
-    version: '1.0.0',
-    endpoints: {
-      auth: '/api/v1/auth',
-      customer: '/api/v1/customer',
-      superadmin: '/api/v1/superadmin',
-      cashier: '/api/v1/cashier',
-      chef: '/api/v1/chef',
-      waiter: '/api/v1/waiter',
-    },
-  })
-})
+// ============================================
+// SAFE ROUTE LOADER
+// ============================================
 
-/**
- * API Routes - Version 1
- */
-const API_VERSION = '/api/v1'
+const safeRequire = (path, routeName) => {
+  try {
+    const route = require(path);
+    console.log(`✅ ${routeName} routes loaded`);
+    return route;
+  } catch (err) {
+    console.log(`⚠️  ${routeName} routes not found (${err.message})`);
+    return null;
+  }
+};
 
-// Authentication Routes
-app.use(`${API_VERSION}/auth`, authLimiter, authRoutes)
+// ============================================
+// AUTH ROUTES
+// ============================================
 
-// Customer Routes
-app.use(`${API_VERSION}/customer/menu`, apiLimiter, customerMenuRoutes)
-app.use(`${API_VERSION}/customer/orders`, apiLimiter, customerOrderRoutes)
-app.use(`${API_VERSION}/customer/cart`, apiLimiter, customerCartRoutes)
-app.use(`${API_VERSION}/customer/offers`, apiLimiter, customerOfferRoutes)
-app.use(`${API_VERSION}/customer/loyalty`, apiLimiter, customerLoyaltyRoutes)
-app.use(`${API_VERSION}/customer/reviews`, apiLimiter, customerReviewRoutes)
-app.use(`${API_VERSION}/customer/session`, apiLimiter, customerSessionRoutes)
+const authRoutes = safeRequire('./auth/auth.routes', 'Auth');
+if (authRoutes) {
+  app.use('/api/auth', authRoutes);
+}
 
-// SuperAdmin Routes
-app.use(`${API_VERSION}/superadmin/users`, apiLimiter, superadminUserRoutes)
-app.use(`${API_VERSION}/superadmin/menu`, apiLimiter, superadminMenuRoutes)
-app.use(`${API_VERSION}/superadmin/offers`, apiLimiter, superadminOfferRoutes)
-app.use(`${API_VERSION}/superadmin/loyalty`, apiLimiter, superadminLoyaltyRoutes)
-app.use(`${API_VERSION}/superadmin/reports`, apiLimiter, superadminReportRoutes)
-app.use(`${API_VERSION}/superadmin/settings`, apiLimiter, superadminSettingsRoutes)
+// ============================================
+// 🆕 BIOMETRIC ROUTES (Face Recognition + Fingerprint)
+// ✅ FIXED: Changed from fingerprint.routes to biometric.routes
+// ============================================
 
-// Cashier Routes
-app.use(`${API_VERSION}/cashier/billing`, apiLimiter, cashierBillingRoutes)
-app.use(`${API_VERSION}/cashier/cash`, apiLimiter, cashierCashFlowRoutes)
-app.use(`${API_VERSION}/cashier/transactions`, apiLimiter, cashierTransactionRoutes)
-app.use(`${API_VERSION}/cashier/reports`, apiLimiter, cashierReportRoutes)
-app.use(`${API_VERSION}/cashier/payment`, apiLimiter, cashierPaymentRoutes)
+const biometricRoutes = safeRequire('./modules/biometric/biometric.routes', 'Biometric');
+if (biometricRoutes) {
+  app.use('/api/biometric', biometricRoutes);
+  console.log('🔐 Biometric routes registered at /api/biometric');
+}
 
-// Chef Routes
-app.use(`${API_VERSION}/chef/kitchen`, apiLimiter, chefKitchenRoutes)
-app.use(`${API_VERSION}/chef/orders`, apiLimiter, chefOrderQueueRoutes)
-app.use(`${API_VERSION}/chef/inventory`, apiLimiter, chefInventoryRoutes)
-app.use(`${API_VERSION}/chef/recipes`, apiLimiter, chefRecipeRoutes)
+// ============================================
+// MODULE ROUTES (Based on your structure)
+// ============================================
 
-// Waiter Routes
-app.use(`${API_VERSION}/waiter/tables`, apiLimiter, waiterTableRoutes)
-app.use(`${API_VERSION}/waiter/orders`, apiLimiter, waiterOrderRoutes)
-app.use(`${API_VERSION}/waiter/tips`, apiLimiter, waiterTipRoutes)
+// Billing
+const billingRoutes = safeRequire('./modules/billing/billing.routes', 'Billing');
+if (billingRoutes) app.use('/api/billing', billingRoutes);
 
-/**
- * 404 Handler - Route Not Found
- */
-app.use('*', (req, res) => {
+// Customer
+const customerRoutes = safeRequire('./modules/customer/customer.routes', 'Customer');
+if (customerRoutes) app.use('/api/customers', customerRoutes);
+
+// Cart (Customer cart management)
+const cartRoutes = safeRequire('./modules/customer/cart.routes', 'Cart');
+if (cartRoutes) {
+  app.use('/api/cart', cartRoutes);
+  console.log('🛒 Cart routes registered at /api/cart');
+}
+
+// Inventory
+const inventoryRoutes = safeRequire('./modules/inventory/inventory.routes', 'Inventory');
+if (inventoryRoutes) app.use('/api/inventory', inventoryRoutes);
+
+// Kitchen
+const kitchenRoutes = safeRequire('./modules/kitchen/kitchen.routes', 'Kitchen');
+if (kitchenRoutes) app.use('/api/kitchen', kitchenRoutes);
+
+// Loyalty
+const loyaltyRoutes = safeRequire('./modules/loyalty/loyalty.routes', 'Loyalty');
+if (loyaltyRoutes) app.use('/api/loyalty', loyaltyRoutes);
+
+// Manager (CRITICAL - WAS MISSING!)
+const managerRoutes = safeRequire('./modules/manager/manager.routes', 'Manager');
+if (managerRoutes) {
+  app.use('/api/manager', managerRoutes);
+  console.log('👔 Manager routes registered at /api/manager');
+} else {
+  console.error('❌ CRITICAL: Manager routes missing!');
+}
+
+// Menu
+const menuRoutes = safeRequire('./modules/menu/menu.routes', 'Menu');
+if (menuRoutes) app.use('/api/menu', menuRoutes);
+
+// Notification (from your directory structure)
+const notificationRoutes = safeRequire('./modules/notification/notification.routes', 'Notification');
+if (notificationRoutes) {
+  app.use('/api/notifications', notificationRoutes);
+  console.log('🔔 Notification routes registered at /api/notifications');
+}
+
+// Order (CRITICAL)
+const orderRoutes = safeRequire('./modules/order/order.routes', 'Order');
+if (orderRoutes) {
+  app.use('/api/orders', orderRoutes);
+  console.log('🎯 Order routes registered at /api/orders');
+} else {
+  console.error('❌ CRITICAL: Order routes missing!');
+}
+
+// Recommendations (AI-Powered)
+const recommendationsRoutes = safeRequire('./modules/recommendations/recommendations.routes', 'Recommendations');
+if (recommendationsRoutes) {
+  app.use('/api/recommendations', recommendationsRoutes);
+  console.log('🤖 Recommendations routes registered at /api/recommendations');
+}
+
+// Request (Customer assistance)
+const requestRoutes = safeRequire('./modules/request/request.routes', 'Request');
+if (requestRoutes) {
+  app.use('/api/requests', requestRoutes);
+  console.log('🙋 Request routes registered at /api/requests');
+}
+
+// Table
+const tableRoutes = safeRequire('./modules/table/table.routes', 'Table');
+if (tableRoutes) app.use('/api/tables', tableRoutes);
+
+// Table Sessions (WAS MISSING!)
+const tableSessionRoutes = safeRequire('./modules/table/tableSession.routes', 'Table Sessions');
+if (tableSessionRoutes) {
+  app.use('/api/table-sessions', tableSessionRoutes);
+  console.log('🪑 Table Session routes registered at /api/table-sessions');
+}
+
+// User
+const userRoutes = safeRequire('./modules/user/user.routes', 'User');
+if (userRoutes) app.use('/api/users', userRoutes);
+
+// Waiter (CRITICAL)
+const waiterRoutes = safeRequire('./modules/waiter/waiter.routes', 'Waiter');
+if (waiterRoutes) {
+  app.use('/api/waiter', waiterRoutes);
+  console.log('👨‍🍳 Waiter routes registered at /api/waiter');
+} else {
+  console.error('❌ CRITICAL: Waiter routes missing!');
+}
+
+// Waiter Assignment (WAS MISSING!)
+const waiterAssignmentRoutes = safeRequire('./modules/waiter/waiter-assignment.routes', 'Waiter Assignment');
+if (waiterAssignmentRoutes) {
+  app.use('/api/waiter-assignment', waiterAssignmentRoutes);
+  console.log('📋 Waiter Assignment routes registered at /api/waiter-assignment');
+}
+
+// Zone (from your directory structure)
+const zoneRoutes = safeRequire('./modules/zone/zone.routes', 'Zone');
+if (zoneRoutes) {
+  app.use('/api/zones', zoneRoutes);
+  console.log('🗺️  Zone routes registered at /api/zones');
+}
+
+// ============================================
+// 404 HANDLER
+// ============================================
+
+app.use((req, res) => {
+  console.log(`🔴 Not Found: Route ${req.originalUrl} not found`);
   res.status(404).json({
-    status: 'error',
-    message: `Cannot ${req.method} ${req.originalUrl} - Route not found`,
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+    statusCode: 404,
     availableRoutes: [
-      '/health',
-      '/api',
-      `${API_VERSION}/auth`,
-      `${API_VERSION}/customer/*`,
-      `${API_VERSION}/superadmin/*`,
-      `${API_VERSION}/cashier/*`,
-      `${API_VERSION}/chef/*`,
-      `${API_VERSION}/waiter/*`,
-    ],
-  })
-})
+      '/api/health',
+      '/api/auth/*',
+      '/api/biometric/*',
+      '/api/billing/*',
+      '/api/cart/*',
+      '/api/customers/*',
+      '/api/inventory/*',
+      '/api/kitchen/*',
+      '/api/loyalty/*',
+      '/api/manager/*',
+      '/api/menu/*',
+      '/api/notifications/*',
+      '/api/orders/*',
+      '/api/recommendations/*',
+      '/api/requests/*',
+      '/api/tables/*',
+      '/api/table-sessions/*',
+      '/api/users/*',
+      '/api/waiter/*',
+      '/api/waiter-assignment/*',
+      '/api/zones/*'
+    ]
+  });
+});
 
-/**
- * Global Error Handler
- * Must be last middleware
- */
-app.use(errorHandler)
+// ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
 
-/**
- * Export App
- */
-module.exports = app
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err.message);
+  
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack);
+  }
+
+  const statusCode = err.statusCode || err.status || 500;
+  const message = err.message || 'Internal Server Error';
+
+  res.status(statusCode).json({
+    success: false,
+    message,
+    statusCode,
+    ...(process.env.NODE_ENV !== 'production' && { 
+      stack: err.stack,
+      error: err 
+    })
+  });
+});
+
+module.exports = app;

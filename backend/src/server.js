@@ -1,224 +1,305 @@
-// backend/src/server.js
-const http = require('http')
-const app = require('./app')
-const mongoose = require('mongoose')
-const { Server } = require('socket.io')
+// File: backend/src/server.js
+// 🎯 SERVER STARTUP FILE WITH SOCKET.IO
+// ✅ Real-time waiter notifications & proximity-based routing
+// ✅ Modern MongoDB connection (no deprecated options)
 
-// Load environment variables
-require('dotenv').config()
+const app = require('./app');
+const mongoose = require('mongoose');
+const { Server } = require('socket.io');
+const http = require('http');
+require('dotenv').config();
 
-// Import socket handlers
-const { setupOrderSocket } = require('./websockets/orderSocket')
-const { setupKitchenSocket } = require('./websockets/kitchenSocket')
-const { setupTableSocket } = require('./websockets/tableSocket')
+// ============================================
+// CONFIGURATION
+// ============================================
 
-/**
- * Server Configuration
- */
-const PORT = process.env.PORT || 5000
-const NODE_ENV = process.env.NODE_ENV || 'development'
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/cafe-management'
+const PORT = process.env.PORT || 5000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/cafe-management';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-/**
- * Create HTTP Server
- */
-const server = http.createServer(app)
+// ============================================
+// CREATE HTTP SERVER
+// ============================================
 
-/**
- * Initialize Socket.IO
- */
-const io = new Server(server, {
+const httpServer = http.createServer(app);
+
+// ============================================
+// SOCKET.IO SETUP
+// ============================================
+
+const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    origin: FRONTEND_URL,
+    methods: ['GET', 'POST'],
+    credentials: true
   },
+  transports: ['websocket', 'polling'],
   pingTimeout: 60000,
   pingInterval: 25000
-})
+});
 
 // Make io accessible to routes
-app.set('io', io)
+app.set('io', io);
 
-/**
- * Setup WebSocket Handlers
- */
+// Connected users storage
+const connectedWaiters = new Map(); // waiterId -> socketId
+const connectedCustomers = new Map(); // customerId -> socketId
+
+// ============================================
+// SOCKET.IO EVENT HANDLERS
+// ============================================
+
 io.on('connection', (socket) => {
-  console.log(`✅ New client connected: ${socket.id}`)
+  console.log('🔌 Client connected:', socket.id);
 
-  // Setup different socket handlers
-  setupOrderSocket(io, socket)
-  setupKitchenSocket(io, socket)
-  setupTableSocket(io, socket)
+  // Waiter connects
+  socket.on('waiter:connect', (data) => {
+    const { waiterId, name } = data;
+    connectedWaiters.set(waiterId, {
+      socketId: socket.id,
+      name,
+      connectedAt: new Date(),
+      location: null
+    });
+    
+    // Join waiter-specific room
+    socket.join(`waiter-${waiterId}`);
+    
+    console.log(`👨‍🍳 Waiter connected: ${name} (${waiterId})`);
+    
+    // Send confirmation
+    socket.emit('waiter:connected', {
+      success: true,
+      waiterId,
+      message: 'Connected to notification system'
+    });
+  });
 
-  socket.on('disconnect', (reason) => {
-    console.log(`❌ Client disconnected: ${socket.id} - Reason: ${reason}`)
-  })
-
-  socket.on('error', (error) => {
-    console.error(`🔴 Socket error for ${socket.id}:`, error)
-  })
-})
-
-/**
- * MongoDB Connection with Retry Logic
- */
-const connectDB = async (retries = 5, delay = 5000) => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await mongoose.connect(MONGODB_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-      })
-
-      console.log('✅ MongoDB Connected Successfully')
-      console.log(`📊 Database: ${mongoose.connection.name}`)
-      console.log(`🔗 Host: ${mongoose.connection.host}`)
-      
-      // Setup database event listeners
-      setupDatabaseListeners()
-      
-      return true
-    } catch (error) {
-      console.error(`❌ MongoDB Connection Failed (Attempt ${i + 1}/${retries}):`, error.message)
-      
-      if (i === retries - 1) {
-        console.error('🔴 All connection attempts failed. Exiting...')
-        process.exit(1)
-      }
-      
-      console.log(`⏳ Retrying in ${delay / 1000} seconds...`)
-      await new Promise(resolve => setTimeout(resolve, delay))
+  // Update waiter location for proximity matching
+  socket.on('waiter:location', (data) => {
+    const { waiterId, latitude, longitude } = data;
+    const waiter = connectedWaiters.get(waiterId);
+    
+    if (waiter) {
+      waiter.location = { latitude, longitude, updatedAt: new Date() };
+      connectedWaiters.set(waiterId, waiter);
+      console.log(`📍 Waiter location updated: ${waiterId}`);
     }
-  }
-}
+  });
 
-/**
- * Setup Database Event Listeners
- */
-const setupDatabaseListeners = () => {
-  mongoose.connection.on('error', (err) => {
-    console.error('🔴 MongoDB connection error:', err)
-  })
+  // Customer connects
+  socket.on('customer:connect', (data) => {
+    const { customerId, tableNumber } = data;
+    connectedCustomers.set(customerId, {
+      socketId: socket.id,
+      tableNumber,
+      connectedAt: new Date()
+    });
+    
+    socket.join(`table-${tableNumber}`);
+    
+    console.log(`👤 Customer connected: ${customerId} at Table ${tableNumber}`);
+  });
 
-  mongoose.connection.on('disconnected', () => {
-    console.warn('⚠️ MongoDB disconnected. Attempting to reconnect...')
-  })
+  // Handle waiter accepting request
+  socket.on('request:accept', async (data) => {
+    const { requestId, waiterId } = data;
+    
+    console.log(`✅ Request ${requestId} accepted by waiter ${waiterId}`);
+    
+    // Notify other waiters that request was accepted
+    io.emit('request:accepted', {
+      requestId,
+      waiterId,
+      acceptedAt: new Date()
+    });
+    
+    // Notify customer
+    const Request = require('./modules/request/request.model');
+    const request = await Request.findById(requestId).populate('tableId');
+    
+    if (request?.tableId?.number) {
+      io.to(`table-${request.tableId.number}`).emit('waiter:assigned', {
+        requestId,
+        waiterId,
+        message: 'A waiter is on the way!'
+      });
+    }
+  });
 
-  mongoose.connection.on('reconnected', () => {
-    console.log('✅ MongoDB reconnected successfully')
-  })
+  // Handle waiter passing request
+  socket.on('request:pass', (data) => {
+    const { requestId, waiterId } = data;
+    
+    console.log(`⏭️ Request ${requestId} passed by waiter ${waiterId}`);
+    
+    // Trigger escalation to next waiter
+    io.emit('request:passed', {
+      requestId,
+      passedBy: waiterId,
+      passedAt: new Date()
+    });
+  });
 
-  mongoose.connection.on('close', () => {
-    console.log('🔴 MongoDB connection closed')
-  })
-}
+  // Waiter joins table room (for order updates)
+  socket.on('join-room', (room) => {
+    socket.join(room);
+    console.log(`📍 Socket ${socket.id} joined room: ${room}`);
+  });
 
-/**
- * Graceful Shutdown Handler
- */
-const gracefulShutdown = async (signal) => {
-  console.log(`\n⚠️ ${signal} received. Starting graceful shutdown...`)
+  // Waiter leaves table room
+  socket.on('leave-room', (room) => {
+    socket.leave(room);
+    console.log(`🚪 Socket ${socket.id} left room: ${room}`);
+  });
 
+  // Handle disconnect
+  socket.on('disconnect', (reason) => {
+    console.log(`❌ Client disconnected: ${socket.id} (${reason})`);
+    
+    // Remove from connected waiters
+    for (const [waiterId, data] of connectedWaiters.entries()) {
+      if (data.socketId === socket.id) {
+        connectedWaiters.delete(waiterId);
+        console.log(`👨‍🍳 Waiter disconnected: ${waiterId}`);
+        break;
+      }
+    }
+    
+    // Remove from connected customers
+    for (const [customerId, data] of connectedCustomers.entries()) {
+      if (data.socketId === socket.id) {
+        connectedCustomers.delete(customerId);
+        console.log(`👤 Customer disconnected: ${customerId}`);
+        break;
+      }
+    }
+  });
+
+  // Error handling
+  socket.on('error', (error) => {
+    console.error('⚠️ Socket error:', error);
+  });
+});
+
+// Make connected users accessible
+app.set('connectedWaiters', connectedWaiters);
+app.set('connectedCustomers', connectedCustomers);
+
+// ============================================
+// DATABASE CONNECTION
+// ============================================
+
+const connectDB = async () => {
   try {
-    // Close HTTP server
-    server.close(async () => {
-      console.log('✅ HTTP server closed')
+    // ✅ Modern connection - no deprecated options needed for MongoDB driver v4+
+    const conn = await mongoose.connect(MONGODB_URI);
 
-      // Close Socket.IO connections
-      io.close(() => {
-        console.log('✅ Socket.IO connections closed')
-      })
+    console.log('✅ MongoDB connected successfully');
+    console.log(`📊 Database: ${conn.connection.name}`);
+    console.log(`🖥️  Host: ${conn.connection.host}`);
+    
+    // Log all registered models
+    const models = mongoose.modelNames();
+    if (models.length > 0) {
+      console.log('📦 Registered models:', models.join(', '));
+    }
+    
+    // Handle connection events
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ MongoDB connection error:', err);
+    });
 
-      // Close MongoDB connection
-      await mongoose.connection.close(false)
-      console.log('✅ MongoDB connection closed')
+    mongoose.connection.on('disconnected', () => {
+      console.log('❌ MongoDB disconnected');
+    });
 
-      console.log('✅ Graceful shutdown completed')
-      process.exit(0)
-    })
-
-    // Force shutdown after 30 seconds
-    setTimeout(() => {
-      console.error('⚠️ Forcing shutdown after timeout')
-      process.exit(1)
-    }, 30000)
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ MongoDB reconnected');
+    });
+    
   } catch (error) {
-    console.error('🔴 Error during shutdown:', error)
-    process.exit(1)
+    console.error('❌ MongoDB connection error:', error);
+    process.exit(1);
   }
-}
+};
 
-/**
- * Process Event Handlers
- */
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+// ============================================
+// GRACEFUL SHUTDOWN
+// ============================================
 
+const gracefulShutdown = async () => {
+  console.log('\n⚠️  Shutting down gracefully...');
+  
+  try {
+    // Close Socket.IO connections
+    io.close(() => {
+      console.log('✅ Socket.IO server closed');
+    });
+    
+    // Close MongoDB connection
+    await mongoose.connection.close();
+    console.log('✅ MongoDB connection closed');
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Handle shutdown signals
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+// Handle uncaught errors
 process.on('uncaughtException', (error) => {
-  console.error('🔴 Uncaught Exception:', error)
-  gracefulShutdown('uncaughtException')
-})
+  console.error('❌ Uncaught Exception:', error);
+  gracefulShutdown();
+});
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('🔴 Unhandled Rejection at:', promise, 'reason:', reason)
-  gracefulShutdown('unhandledRejection')
-})
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown();
+});
 
-/**
- * Start Server
- */
+// ============================================
+// START SERVER
+// ============================================
+
 const startServer = async () => {
   try {
     // Connect to database
-    await connectDB()
+    await connectDB();
 
-    // Start HTTP server
-    server.listen(PORT, () => {
-      console.log('\n' + '='.repeat(60))
-      console.log('🚀 SERVER STARTED SUCCESSFULLY')
-      console.log('='.repeat(60))
-      console.log(`📍 Server running on: http://localhost:${PORT}`)
-      console.log(`🌍 Environment: ${NODE_ENV}`)
-      console.log(`⏰ Started at: ${new Date().toLocaleString()}`)
-      console.log(`🔌 Socket.IO: Enabled`)
-      console.log(`📦 API Version: v1`)
-      console.log('='.repeat(60) + '\n')
+    // Start HTTP + Socket.IO server
+    httpServer.listen(PORT, () => {
+      console.log('🚀 Server started successfully');
+      console.log(`📡 API URL: http://localhost:${PORT}/api`);
+      console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
+      console.log(`🔌 Socket.IO: ws://localhost:${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log('\n✨ Server is ready to accept requests\n');
+    });
 
-      // Log available routes in development
-      if (NODE_ENV === 'development') {
-        console.log('📋 Available Routes:')
-        console.log('   - Health Check: GET /health')
-        console.log('   - API Docs: GET /api-docs')
-        console.log('   - Customer: /api/v1/customer/*')
-        console.log('   - SuperAdmin: /api/v1/superadmin/*')
-        console.log('   - Cashier: /api/v1/cashier/*')
-        console.log('   - Chef: /api/v1/chef/*')
-        console.log('   - Waiter: /api/v1/waiter/*')
-        console.log('   - Auth: /api/v1/auth/*')
-        console.log('\n')
-      }
-    })
-
-    server.on('error', (error) => {
+    // Handle server errors
+    httpServer.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
-        console.error(`🔴 Port ${PORT} is already in use`)
-        process.exit(1)
+        console.error(`❌ Port ${PORT} is already in use`);
       } else {
-        console.error('🔴 Server error:', error)
-        process.exit(1)
+        console.error('❌ Server error:', error);
       }
-    })
+      gracefulShutdown();
+    });
+
   } catch (error) {
-    console.error('🔴 Failed to start server:', error)
-    process.exit(1)
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
   }
-}
+};
 
 // Start the server
-startServer()
+startServer();
 
-// Export server and io for testing
-module.exports = { server, io }
+// Export for testing
+module.exports = { httpServer, io };

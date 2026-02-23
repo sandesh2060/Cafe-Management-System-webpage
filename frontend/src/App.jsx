@@ -1,67 +1,70 @@
-import { BrowserRouter } from 'react-router-dom'
-import { Provider } from 'react-redux'
-import { Suspense } from 'react'
+// ============================================
+// FILE: frontend/src/App.jsx
+// 🎯 MAIN APP COMPONENT
+// ✅ Redux Provider + Session Restoration + Routes
+// ✅ FIX: Toast theme now matches app theme (no more white overlay in dark mode)
+// ✅ FIX: Toast position moved to bottom-center (avoids fixed header collision)
+// ============================================
 
-// Redux Store
-import store from './redux/store'
+import { useEffect } from 'react';
+import { BrowserRouter } from 'react-router-dom';
+import { Provider, useDispatch } from 'react-redux';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import AppRoutes from './routes/AppRoutes';
+import { ThemeProvider, useTheme } from './shared/context/ThemeContext';
+import store from './store/store';
+import { restoreSession } from './store/slices/authSlice';
+import './styles/globals.css';
 
-// Context Providers
-import { AuthProvider } from './context/AuthContext'
-import { CartProvider } from './context/CartContext'
-import { OrderProvider } from './context/OrderContext'
-import { LoyaltyProvider } from './context/LoyaltyContext'
-import { ThemeProvider } from './context/ThemeContext'
-import { NotificationProvider } from './context/NotificationContext'
-import { SessionProvider } from './context/SessionContext'
+// Wrapper component to access dispatch inside Provider
+function AppContent() {
+  const dispatch = useDispatch();
+  const { theme } = useTheme();
 
-// Routes
-import AppRoutes from './routes/AppRoutes'
+  // Restore session from localStorage on app mount
+  useEffect(() => {
+    console.log('🔄 Restoring session from localStorage...');
+    dispatch(restoreSession());
+  }, [dispatch]);
 
-// Components
-import Loader from './components/common/Loader/Loader'
-import ErrorBoundary from './components/common/ErrorBoundary/ErrorBoundary'
-
-/**
- * Main App Component
- * Clean, light-themed application
- */
-function App() {
   return (
-    <ErrorBoundary>
-      <Provider store={store}>
-        <BrowserRouter>
-          <ThemeProvider>
-            <AuthProvider>
-              <NotificationProvider>
-                <SessionProvider>
-                  <CartProvider>
-                    <OrderProvider>
-                      <LoyaltyProvider>
-                        <Suspense 
-                          fallback={
-                            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
-                              <div className="text-center">
-                                <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-orange-500 mx-auto"></div>
-                                <p className="mt-4 text-gray-600 font-medium">Loading...</p>
-                              </div>
-                            </div>
-                          }
-                        >
-                          <div className="app min-h-screen">
-                            <AppRoutes />
-                          </div>
-                        </Suspense>
-                      </LoyaltyProvider>
-                    </OrderProvider>
-                  </CartProvider>
-                </SessionProvider>
-              </NotificationProvider>
-            </AuthProvider>
-          </ThemeProvider>
-        </BrowserRouter>
-      </Provider>
-    </ErrorBoundary>
-  )
+    <BrowserRouter>
+      <div className="app-container">
+        <AppRoutes />
+
+        {/* Global Toast Notifications */}
+        <ToastContainer
+          position="bottom-center"
+          autoClose={2000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          // ✅ FIX: Match toast theme to current app theme
+          // "light" theme in dark mode = white toast on dark page = looks like white screen
+          theme={theme === 'dark' ? 'dark' : 'colored'}
+          toastClassName="custom-toast"
+          bodyClassName="custom-toast-body"
+          style={{ zIndex: 99999 }}
+        />
+      </div>
+    </BrowserRouter>
+  );
 }
 
-export default App
+function App() {
+  return (
+    <Provider store={store}>
+      {/* ✅ ThemeProvider wraps AppContent so useTheme() works inside it */}
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </Provider>
+  );
+}
+
+export default App;

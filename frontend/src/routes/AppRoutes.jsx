@@ -1,193 +1,139 @@
-// frontend/src/routes/AppRoutes.jsx
-import { Routes, Route, Navigate } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+// File: frontend/src/routes/AppRoutes.jsx
+// ✅ All routes fully protected — no URL bypass
+// 🔥 STREAMLINED: Removed biometric page - auto-detection in LoginPage
 
-// Layouts
-import CustomerLayout from '../layouts/CustomerLayout'
-import SuperAdminLayout from '../layouts/SuperAdminLayout'
-import CashierLayout from '../layouts/CashierLayout'
-import ChefLayout from '../layouts/ChefLayout'
-import WaiterLayout from '../layouts/WaiterLayout'
-import AuthLayout from '../layouts/AuthLayout'
+import { Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import ProtectedRoute from "./ProtectedRoute";
+import RoleBasedRoute from "./RoleBasedRoute";
+import Loader from "@/shared/components/Loader";
 
-// Protected Route Components
-import ProtectedRoute from './ProtectedRoute'
-import RoleBasedRoute from './RoleBasedRoute'
+// ==================== CUSTOMER PAGES ====================
+const CustomerLoginPage     = lazy(() => import("@/modules/customer/pages/LoginPage"));
+const UserNamePrompt        = lazy(() => import("@/modules/customer/components/UserNamePrompt"));
+const MenuPage              = lazy(() => import("@/modules/customer/pages/MenuPage"));
+const CartPage              = lazy(() => import("@/modules/customer/pages/CartPage"));
+const OrdersPage            = lazy(() => import("@/modules/customer/pages/OrdersPage"));
+const OrderDetailsPage      = lazy(() => import("@/modules/customer/pages/OrderDetailsPage"));
+const ProfilePage           = lazy(() => import("@/modules/customer/pages/ProfilePage"));
+const PaymentPage           = lazy(() => import("@/modules/customer/pages/PaymentPage")); // ✅ ADDED
 
-// Common Components
-import Loader from '../components/common/Loader/Loader'
+// ==================== STAFF AUTH ====================
+const StaffLoginPage = lazy(() => import("@/auth/pages/StaffLoginPage"));
 
-// Lazy load pages for better performance
-// QR Login Page (First Page)
-const QRLoginPage = lazy(() => import('../pages/customer/QRLoginPage'))
+// ==================== ADMIN PAGES ====================
+const AdminDashboard    = lazy(() => import("@/modules/admin/pages/DashboardPage"));
+const MenuManagement    = lazy(() => import("@/modules/admin/pages/MenuManagementPage"));
+const UsersPage         = lazy(() => import("@/modules/admin/pages/UsersPage"));
+const LoyaltyManagement = lazy(() => import("@/modules/admin/pages/LoyaltyPage"));
+const ReportsPage       = lazy(() => import("@/modules/admin/pages/ReportsPage"));
 
-// Auth Pages
-const LoginPage = lazy(() => import('../pages/auth/LoginPage'))
-const RegisterPage = lazy(() => import('../pages/auth/RegisterPage'))
-const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'))
+// ==================== MANAGER PAGES ====================
+const ManagerDashboard       = lazy(() => import("@/modules/manager/pages/DashboardPage"));
+const ManagerInventory       = lazy(() => import("@/modules/manager/pages/InventoryPage"));
+const ManagerReports         = lazy(() => import("@/modules/manager/pages/ReportsPage"));
+const ManagerStaff           = lazy(() => import("@/modules/manager/pages/StaffPage"));
+const StaffCredentialsPage   = lazy(() => import("@/modules/manager/pages/StaffCredentialsPage"));
 
-// Customer Pages
-const TableSessionPage = lazy(() => import('../pages/customer/TableSessionPage'))
-const MenuBrowsePage = lazy(() => import('../pages/customer/MenuBrowsePage'))
-const OrderTrackingPage = lazy(() => import('../pages/customer/OrderTrackingPage'))
-const ProfilePage = lazy(() => import('../pages/customer/ProfilePage'))
-const LoyaltyPage = lazy(() => import('../pages/customer/LoyaltyPage'))
-const OrderHistoryPage = lazy(() => import('../pages/customer/OrderHistoryPage'))
+// ==================== COOK PAGES ====================
+const KitchenDisplay = lazy(() => import("@/modules/cook/pages/KitchenDisplayPage"));
+const InventoryPage  = lazy(() => import("@/modules/cook/pages/InventoryPage"));
 
-// SuperAdmin Pages
-const SuperAdminDashboardPage = lazy(() => import('../pages/superadmin/DashboardPage'))
-const UsersPage = lazy(() => import('../pages/superadmin/UsersPage'))
-const MenuManagementPage = lazy(() => import('../pages/superadmin/MenuManagementPage'))
-const OffersPage = lazy(() => import('../pages/superadmin/OffersPage'))
-const LoyaltyManagementPage = lazy(() => import('../pages/superadmin/LoyaltyManagementPage'))
-const ReportsPage = lazy(() => import('../pages/superadmin/ReportsPage'))
-const SettingsPage = lazy(() => import('../pages/superadmin/SettingsPage'))
+// ==================== WAITER PAGES ====================
+const TablesPage       = lazy(() => import("@/modules/waiter/pages/TablesPage"));
+const WaiterOrdersPage = lazy(() => import("@/modules/waiter/pages/OrdersPage"));
 
-// Cashier Pages
-const CashierDashboardPage = lazy(() => import('../pages/cashier/DashboardPage'))
-const BillingPage = lazy(() => import('../pages/cashier/BillingPage'))
-const CashManagementPage = lazy(() => import('../pages/cashier/CashManagementPage'))
-const TransactionsPage = lazy(() => import('../pages/cashier/TransactionsPage'))
-const CashierReportsPage = lazy(() => import('../pages/cashier/ReportsPage'))
+// ==================== CASHIER PAGES ====================
+const BillingPage      = lazy(() => import("@/modules/cashier/pages/BillingPage"));
+const TransactionsPage = lazy(() => import("@/modules/cashier/pages/TransactionsPage"));
 
-// Chef Pages
-const ChefDashboardPage = lazy(() => import('../pages/chef/DashboardPage'))
-const KitchenDisplayPage = lazy(() => import('../pages/chef/KitchenDisplayPage'))
-const InventoryPage = lazy(() => import('../pages/chef/InventoryPage'))
-const RecipesPage = lazy(() => import('../pages/chef/RecipesPage'))
+// ==================== ERROR PAGES ====================
+const NotFound     = lazy(() => import("@/shared/components/NotFound"));
+const Unauthorized = lazy(() => import("@/shared/components/Unauthorized"));
 
-// Waiter Pages
-const WaiterDashboardPage = lazy(() => import('../pages/waiter/DashboardPage'))
-const TablesPage = lazy(() => import('../pages/waiter/TablesPage'))
-const OrdersPage = lazy(() => import('../pages/waiter/OrdersPage'))
-const TipsPage = lazy(() => import('../pages/waiter/TipsPage'))
-
-// Error Pages
-const NotFoundPage = lazy(() => import('../pages/ErrorPages/NotFoundPage'))
-const UnauthorizedPage = lazy(() => import('../pages/ErrorPages/UnauthorizedPage'))
-
-/**
- * Main Application Routes
- * QR Login Page is the first page users see
- */
 const AppRoutes = () => {
   return (
     <Suspense fallback={<Loader fullScreen />}>
       <Routes>
-        {/* ============================================
-            DEFAULT ROUTE - QR LOGIN PAGE
-        ============================================ */}
-        <Route path="/" element={<QRLoginPage />} />
+        {/* ROOT */}
+        <Route path="/" element={<Navigate to="/customer/login" replace />} />
 
-        {/* ============================================
-            PUBLIC ROUTES (No Authentication Required)
-        ============================================ */}
-        
-        {/* Staff Auth Routes */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        {/* ==================== CUSTOMER ROUTES ==================== */}
+        <Route path="/customer">
+          {/* Public — table login with auto-detection (QR / location+face / manual) */}
+          <Route path="login" element={<CustomerLoginPage />} />
+
+          {/* ✅ username prompt is protected — needs valid table session */}
+          <Route element={<ProtectedRoute requireTableState />}>
+            <Route path="username" element={<UserNamePrompt />} />
+          </Route>
+
+          {/* Protected customer routes — need full customerSession */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="menu"              element={<MenuPage />} />
+            <Route path="cart"              element={<CartPage />} />
+            <Route path="orders"            element={<OrdersPage />} />
+            <Route path="orders/:orderId"   element={<OrderDetailsPage />} />
+            <Route path="profile"           element={<ProfilePage />} />
+            <Route path="payment"           element={<PaymentPage />} /> {/* ✅ ADDED */}
+          </Route>
         </Route>
 
-        {/* ============================================
-            CUSTOMER ROUTES (Session Required)
-        ============================================ */}
-        <Route path="/customer" element={<CustomerLayout />}>
-          <Route index element={<Navigate to="/customer/menu" replace />} />
-          
-          {/* Protected Customer Routes - Require Session */}
-          <Route path="menu" element={<MenuBrowsePage />} />
-          <Route path="order-tracking" element={<OrderTrackingPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="loyalty" element={<LoyaltyPage />} />
-          <Route path="order-history" element={<OrderHistoryPage />} />
+        {/* ==================== STAFF LOGIN ==================== */}
+        <Route path="/staff">
+          <Route path="login" element={<StaffLoginPage />} />
         </Route>
 
-        {/* ============================================
-            SUPER ADMIN ROUTES (Protected)
-        ============================================ */}
-        <Route
-          path="/superadmin"
-          element={
-            <RoleBasedRoute allowedRoles={['superadmin']}>
-              <SuperAdminLayout />
-            </RoleBasedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/superadmin/dashboard" replace />} />
-          <Route path="dashboard" element={<SuperAdminDashboardPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="menu-management" element={<MenuManagementPage />} />
-          <Route path="offers" element={<OffersPage />} />
-          <Route path="loyalty-management" element={<LoyaltyManagementPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+        {/* ==================== ADMIN ROUTES ==================== */}
+        <Route path="/admin" element={<RoleBasedRoute allowedRoles={["admin"]} />}>
+          <Route index       element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="menu"      element={<MenuManagement />} />
+          <Route path="users"     element={<UsersPage />} />
+          <Route path="loyalty"   element={<LoyaltyManagement />} />
+          <Route path="reports"   element={<ReportsPage />} />
         </Route>
 
-        {/* ============================================
-            CASHIER ROUTES (Protected)
-        ============================================ */}
-        <Route
-          path="/cashier"
-          element={
-            <RoleBasedRoute allowedRoles={['cashier', 'superadmin']}>
-              <CashierLayout />
-            </RoleBasedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/cashier/dashboard" replace />} />
-          <Route path="dashboard" element={<CashierDashboardPage />} />
-          <Route path="billing" element={<BillingPage />} />
-          <Route path="cash-management" element={<CashManagementPage />} />
-          <Route path="transactions" element={<TransactionsPage />} />
-          <Route path="reports" element={<CashierReportsPage />} />
+        {/* ==================== MANAGER ROUTES ==================== */}
+        <Route path="/manager" element={<RoleBasedRoute allowedRoles={["manager", "admin"]} />}>
+          <Route index          element={<Navigate to="/manager/dashboard" replace />} />
+          <Route path="dashboard"  element={<ManagerDashboard />} />
+          <Route path="inventory"  element={<ManagerInventory />} />
+          <Route path="reports"    element={<ManagerReports />} />
+          <Route path="staff"      element={<ManagerStaff />} />
+          <Route path="staff/:staffId/credentials" element={<StaffCredentialsPage />} />
         </Route>
 
-        {/* ============================================
-            CHEF ROUTES (Protected)
-        ============================================ */}
-        <Route
-          path="/chef"
-          element={
-            <RoleBasedRoute allowedRoles={['chef', 'superadmin']}>
-              <ChefLayout />
-            </RoleBasedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/chef/dashboard" replace />} />
-          <Route path="dashboard" element={<ChefDashboardPage />} />
-          <Route path="kitchen-display" element={<KitchenDisplayPage />} />
+        {/* ==================== COOK ROUTES ==================== */}
+        <Route path="/cook" element={<RoleBasedRoute allowedRoles={["cook"]} />}>
+          <Route index        element={<Navigate to="/cook/kitchen" replace />} /> 
+          <Route path="kitchen"   element={<KitchenDisplay />} />
           <Route path="inventory" element={<InventoryPage />} />
-          <Route path="recipes" element={<RecipesPage />} />
         </Route>
 
-        {/* ============================================
-            WAITER ROUTES (Protected)
-        ============================================ */}
-        <Route
-          path="/waiter"
-          element={
-            <RoleBasedRoute allowedRoles={['waiter', 'superadmin']}>
-              <WaiterLayout />
-            </RoleBasedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/waiter/dashboard" replace />} />
-          <Route path="dashboard" element={<WaiterDashboardPage />} />
+        {/* ==================== WAITER ROUTES ==================== */}
+        <Route path="/waiter" element={<RoleBasedRoute allowedRoles={["waiter"]} />}>
+          <Route index      element={<Navigate to="/waiter/tables" replace />} />
           <Route path="tables" element={<TablesPage />} />
-          <Route path="orders" element={<OrdersPage />} />
-          <Route path="tips" element={<TipsPage />} />
+          <Route path="orders" element={<WaiterOrdersPage />} />
         </Route>
 
-        {/* ============================================
-            ERROR ROUTES
-        ============================================ */}
-        <Route path="/unauthorized" element={<UnauthorizedPage />} />
-        <Route path="*" element={<NotFoundPage />} />
+        {/* ==================== CASHIER ROUTES ==================== */}
+        <Route path="/cashier" element={<RoleBasedRoute allowedRoles={["cashier"]} />}>
+          <Route index           element={<Navigate to="/cashier/billing" replace />} />
+          <Route path="billing"      element={<BillingPage />} />
+          <Route path="transactions" element={<TransactionsPage />} />
+        </Route>
+
+        {/* ==================== LEGACY ==================== */}
+        <Route path="/login" element={<Navigate to="/staff/login" replace />} />
+
+        {/* ==================== ERROR ROUTES ==================== */}
+        <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route path="*"             element={<NotFound />} />
       </Routes>
     </Suspense>
-  )
-}
+  );
+};
 
-export default AppRoutes
+export default AppRoutes;

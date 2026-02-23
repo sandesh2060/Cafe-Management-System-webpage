@@ -1,51 +1,50 @@
-// frontend/src/routes/ProtectedRoute.jsx
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { useAuth } from '../hooks/common/useAuth'
-import Loader from '../components/common/Loader/Loader'
+// ============================================
+// FILE: frontend/src/routes/ProtectedRoute.jsx
+// 🔐 PROTECTED ROUTE - Customer session check
+// ✅ Fully protected — no URL bypass
+// ✅ requireTableState prop: guards /customer/username
+// ============================================
 
-/**
- * ProtectedRoute Component
- * Protects routes that require authentication
- * Redirects to login if user is not authenticated
- * 
- * @param {Array} allowedRoles - Optional array of roles that can access this route
- * @param {string} redirectPath - Path to redirect if unauthorized (default: '/login')
- */
-const ProtectedRoute = ({ 
-  allowedRoles = [], 
-  redirectPath = '/login',
-  children 
-}) => {
-  const { user, isAuthenticated, isLoading } = useAuth()
-  const location = useLocation()
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
-  // Show loader while checking authentication
-  if (isLoading) {
-    return <Loader fullScreen />
-  }
+const ProtectedRoute = ({ requireTableState = false }) => {
+  const location = useLocation();
 
-  // Not authenticated - redirect to login
-  if (!isAuthenticated) {
-    return (
-      <Navigate 
-        to={redirectPath} 
-        state={{ from: location }} 
-        replace 
-      />
-    )
-  }
-
-  // Check role-based access if roles are specified
-  if (allowedRoles.length > 0 && user) {
-    const hasRequiredRole = allowedRoles.includes(user.role)
-    
-    if (!hasRequiredRole) {
-      return <Navigate to="/unauthorized" replace />
+  // ── Guard for /customer/username ──────────────────────────────────────
+  // This route is only reachable by navigating from LoginPage with state.
+  // A direct URL hit has no location.state, so we bounce back to login.
+  if (requireTableState) {
+    const hasState = Boolean(location.state?.tableId);
+    if (!hasState) {
+      console.warn('🚫 Direct URL access to /customer/username blocked');
+      return <Navigate to="/customer/login" replace />;
     }
+    return <Outlet />;
   }
 
-  // User is authenticated and authorized
-  return children ? children : <Outlet />
-}
+  // ── Guard for all other customer routes ──────────────────────────────
+  const sessionStr = localStorage.getItem('customerSession');
 
-export default ProtectedRoute
+  if (!sessionStr) {
+    console.warn('🚫 No customer session — redirecting to login');
+    return <Navigate to="/customer/login" replace />;
+  }
+
+  try {
+    const session = JSON.parse(sessionStr);
+
+    if (!session?.customerId || !session?.sessionId) {
+      console.warn('🚫 Malformed customer session — clearing and redirecting');
+      localStorage.removeItem('customerSession');
+      return <Navigate to="/customer/login" replace />;
+    }
+
+    return <Outlet />;
+  } catch {
+    console.warn('🚫 Corrupt customer session — clearing and redirecting');
+    localStorage.removeItem('customerSession');
+    return <Navigate to="/customer/login" replace />;
+  }
+};
+
+export default ProtectedRoute;
